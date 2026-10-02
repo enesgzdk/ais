@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemi Takip Sistemi (AIS)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Gemi Takip Merkezi</h2>
+        <div id="status">Sisteme bağlanılıyor...</div>
+        <div id="shipInfo" class="hidden">
+            <h3>Gemi Bilgileri</h3>
+            <p><strong>MMSI:</strong> <span id="shipMMSI">-</span></p>
+            <p><strong>İsim:</strong> <span id="shipName">Bilinmiyor</span></p>
+            <p><strong>Enlem:</strong> <span id="shipLat">-</span></p>
+            <p><strong>Boylam:</strong> <span id="shipLon">-</span></p>
+            <p><strong>Hız:</strong> <span id="shipSpeed">-</span> knot</p>
+            <p><strong>Rota:</strong> <span id="shipCourse">-</span>°</p>
+            <p><strong>Son Güncelleme:</strong> <span id="lastUpdate">-</span></p>
+        </div>
+    </div>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
