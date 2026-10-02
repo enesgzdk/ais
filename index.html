@@ -11,21 +11,43 @@
             padding: 0;
             height: 100%;
             width: 100%;
-            overflow: hidden; /* Kaydırma çubuklarını gizle */
+            overflow: hidden;
         }
         #map {
             height: 100vh;
             width: 100vw;
+            z-index: 1;
         }
-        /* Leaflet popup stilini biraz güzelleştirelim */
         .leaflet-popup-content {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             font-size: 14px;
             line-height: 1.5;
         }
+        /* Ufak bilgi kutusu (Hataları ve bekleme durumunu göstermek için) */
+        #infoBox {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-family: sans-serif;
+            font-size: 14px;
+            z-index: 1000;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: opacity 0.5s;
+        }
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
+    <div id="infoBox">Sisteme bağlanılıyor...</div>
     <div id="map"></div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
@@ -33,11 +55,9 @@
         let marker;
         let socket;
 
-        // API ve Gemi Bilgileri
         const API_KEY = "2592f9c9ab177b85ed30b95a5ee3a42309338da5";
         const TARGET_MMSI = "371305000";
 
-        // Özel Gemi İkonu
         const shipIcon = L.icon({
             iconUrl: 'https://cdn-icons-png.flaticon.com/512/3211/3211116.png',
             iconSize: [40, 40],
@@ -45,23 +65,32 @@
             popupAnchor: [0, -20]
         });
 
-        // Harita Başlatma
+        const infoBox = document.getElementById('infoBox');
+
+        function setInfo(msg, isError = false) {
+            infoBox.textContent = msg;
+            infoBox.style.background = isError ? 'rgba(220, 53, 69, 0.9)' : 'rgba(0, 0, 0, 0.7)';
+            infoBox.classList.remove('hidden');
+        }
+
+        function hideInfo() {
+            infoBox.classList.add('hidden');
+        }
+
         function initMap() {
-            // Başlangıçta genel bir görünüme sahip olsun
             map = L.map('map').setView([39.0, 35.0], 5);
-            
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors'
+                attribution: '© OpenStreetMap'
             }).addTo(map);
         }
 
-        // WebSockets ile AISStream'e Bağlanma
         function connectAISStream() {
             if (socket) socket.close();
 
             socket = new WebSocket("wss://stream.aisstream.io/v0/stream");
 
             socket.onopen = function () {
+                setInfo("Bağlanıldı. Gemiden yeni sinyal bekleniyor...");
                 let subscriptionMessage = {
                     Apikey: API_KEY,
                     BoundingBoxes: [[[-90, -180], [90, 180]]],
@@ -80,7 +109,6 @@
 
                     let aisMessage = JSON.parse(dataText);
                     
-                    // Konum raporu geldiğinde haritayı güncelle
                     if (aisMessage["MessageType"] === "PositionReport") {
                         let positionReport = aisMessage["Message"]["PositionReport"];
                         let lat = positionReport["Latitude"];
@@ -89,36 +117,41 @@
                         let course = positionReport["Cog"];
                         
                         updateMap(lat, lon, speed, course);
+                        hideInfo(); // Veri geldiğinde bilgi kutusunu gizle
                     }
                 } catch (err) {
-                    console.error("Veri işlenirken hata:", err);
+                    console.error("Veri hatası:", err);
                 }
             };
 
-            socket.onclose = function() {
-                // Bağlantı koparsa 5 saniye sonra tekrar dene (Arkaplanda sessizce yapar)
-                setTimeout(connectAISStream, 5000);
+            socket.onerror = function(error) {
+                // Eğer konsolda 429 vs dönerse buraya düşer
+                setInfo("Bağlantı Hatası! API Limitine takılmış olabilirsiniz.", true);
+            };
+
+            socket.onclose = function(event) {
+                if (event.code === 1008 || event.code === 1011) {
+                    setInfo("Hata: API Anahtarı reddedildi (Çok fazla bağlantı/429).", true);
+                } else {
+                    setInfo("Bağlantı koptu. 10 saniye içinde yeniden deneniyor...", true);
+                }
+                setTimeout(connectAISStream, 10000); // Çok fazla istek atmamak için süreyi 10 saniyeye çıkardık
             };
         }
 
-        // Haritaya Gemiyi Çizme ve Odaklanma
         function updateMap(lat, lon, speed, course) {
             const popupText = `<b>Takip Edilen Gemi</b><br>MMSI: ${TARGET_MMSI}<br>Hız: ${speed ? speed.toFixed(1) : '-'} knot<br>Rota: ${course ? course.toFixed(1) : '-'}°`;
             
             if (marker) {
-                // Gemi zaten haritadaysa yerini ve bilgilerini güncelle
                 marker.setLatLng([lat, lon]);
                 marker.getPopup().setContent(popupText);
             } else {
-                // Gemi ilk defa bulunuyorsa haritaya ekle ve popup'ı aç
                 marker = L.marker([lat, lon], {icon: shipIcon}).addTo(map);
                 marker.bindPopup(popupText).openPopup();
             }
-            // Gemi neredeyse haritayı oraya kaydır
             map.setView([lat, lon], 12);
         }
 
-        // Sayfa yüklenir yüklenmez her şeyi otomatik başlat
         document.addEventListener('DOMContentLoaded', () => {
             initMap();
             connectAISStream();
