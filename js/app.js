@@ -3,7 +3,7 @@ let marker;
 let socket;
 
 const API_KEY = "2592f9c9ab177b85ed30b95a5ee3a42309338da5";
-const TARGET_MMSI = "371305000";
+const TARGET_MMSI = "314740000";
 
 // Haritayı başlat (Sayfa yüklendiğinde)
 function initMap() {
@@ -62,7 +62,7 @@ function connectAISStream() {
         let subscriptionMessage = {
             Apikey: API_KEY,
             BoundingBoxes: [[[-90, -180], [90, 180]]],
-            FiltersShipMMSI: [TARGET_MMSI],
+           // FiltersShipMMSI: [TARGET_MMSI],
             FilterMessageTypes: ["PositionReport", "ShipStaticData"]
         }
         socket.send(JSON.stringify(subscriptionMessage));
