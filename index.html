@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Tarayıcının Favicon (site ikonu) 404 hatası vermesini kökten engeller -->
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    
     <title>Gemi Takip Sistemi</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -23,7 +26,6 @@
             font-size: 14px;
             line-height: 1.5;
         }
-        /* Ufak bilgi kutusu (Hataları ve bekleme durumunu göstermek için) */
         #infoBox {
             position: absolute;
             top: 20px;
@@ -44,6 +46,14 @@
             opacity: 0;
             pointer-events: none;
         }
+        /* Emojiyi düzgün ortalamak için */
+        .ship-emoji-icon {
+            background: none;
+            border: none;
+            text-align: center;
+            line-height: 30px;
+            filter: drop-shadow(2px 4px 4px rgba(0,0,0,0.4));
+        }
     </style>
 </head>
 <body>
@@ -58,11 +68,14 @@
         const API_KEY = "2592f9c9ab177b85ed30b95a5ee3a42309338da5";
         const TARGET_MMSI = "371305000";
 
-        const shipIcon = L.icon({
-            iconUrl: 'https://cdn-icons-png.flaticon.com/512/3211/3211116.png',
-            iconSize: [40, 40],
-            iconAnchor: [20, 20],
-            popupAnchor: [0, -20]
+        // Harici bir link yerine yerleşik Gemi Emojisi (🚢) kullanıyoruz. 
+        // Böylece linkin bozulma veya 404 verme ihtimali SIFIRA iniyor.
+        const shipIcon = L.divIcon({
+            html: '<div style="font-size: 32px;">🚢</div>',
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+            popupAnchor: [0, -16],
+            className: 'ship-emoji-icon'
         });
 
         const infoBox = document.getElementById('infoBox');
@@ -90,7 +103,7 @@
             socket = new WebSocket("wss://stream.aisstream.io/v0/stream");
 
             socket.onopen = function () {
-                setInfo("Bağlanıldı. Gemiden yeni sinyal bekleniyor...");
+                setInfo("Bağlanıldı. Gemiden (MMSI: 371305000) canlı sinyal bekleniyor...");
                 let subscriptionMessage = {
                     Apikey: API_KEY,
                     BoundingBoxes: [[[-90, -180], [90, 180]]],
@@ -117,7 +130,7 @@
                         let course = positionReport["Cog"];
                         
                         updateMap(lat, lon, speed, course);
-                        hideInfo(); // Veri geldiğinde bilgi kutusunu gizle
+                        hideInfo();
                     }
                 } catch (err) {
                     console.error("Veri hatası:", err);
@@ -125,17 +138,16 @@
             };
 
             socket.onerror = function(error) {
-                // Eğer konsolda 429 vs dönerse buraya düşer
-                setInfo("Bağlantı Hatası! API Limitine takılmış olabilirsiniz.", true);
+                setInfo("Bağlantı Hatası! Konsola bakın.", true);
             };
 
             socket.onclose = function(event) {
                 if (event.code === 1008 || event.code === 1011) {
-                    setInfo("Hata: API Anahtarı reddedildi (Çok fazla bağlantı/429).", true);
+                    setInfo("Hata: Çok fazla istek atıldı. 1 dk bekleyin.", true);
                 } else {
-                    setInfo("Bağlantı koptu. 10 saniye içinde yeniden deneniyor...", true);
+                    setInfo("Bağlantı koptu. Yeniden deneniyor...", true);
                 }
-                setTimeout(connectAISStream, 10000); // Çok fazla istek atmamak için süreyi 10 saniyeye çıkardık
+                setTimeout(connectAISStream, 10000);
             };
         }
 
