@@ -62,7 +62,7 @@ function connectAISStream() {
         let subscriptionMessage = {
             Apikey: API_KEY,
             BoundingBoxes: [[[-90, -180], [90, 180]]],
-            FiltersShipMMSI: [TARGET_MMSI],
+           // FiltersShipMMSI: [TARGET_MMSI],
             FilterMessageTypes: ["PositionReport", "ShipStaticData"]
         }
         socket.send(JSON.stringify(subscriptionMessage));
