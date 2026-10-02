@@ -3,10 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Tarayıcının Favicon (site ikonu) 404 hatası vermesini kökten engeller -->
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-    
-    <title>Gemi Takip Sistemi</title>
+    <title>Canlı Gemi Takip Sistemi</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body, html {
@@ -15,6 +13,7 @@
             height: 100%;
             width: 100%;
             overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         #map {
             height: 100vh;
@@ -22,73 +21,104 @@
             z-index: 1;
         }
         .leaflet-popup-content {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             font-size: 14px;
             line-height: 1.5;
         }
-        #infoBox {
+        
+        #ui-panel {
             position: absolute;
-            top: 20px;
+            top: 15px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px 20px;
             border-radius: 8px;
-            font-family: sans-serif;
-            font-size: 14px;
             z-index: 1000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
             text-align: center;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            transition: opacity 0.5s;
+            min-width: 300px;
         }
-        .hidden {
-            opacity: 0;
-            pointer-events: none;
+
+        #ui-panel input {
+            padding: 8px;
+            font-size: 14px;
+            width: 120px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            text-align: center;
         }
-        /* Emojiyi düzgün ortalamak için */
+
+        #ui-panel button {
+            padding: 8px 12px;
+            font-size: 14px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 5px;
+            transition: 0.2s;
+        }
+
+        #ui-panel button:hover {
+            background: #0056b3;
+        }
+
+        #ui-panel button.global-btn {
+            background: #28a745;
+            margin-top: 10px;
+            width: 100%;
+            margin-left: 0;
+        }
+        
+        #ui-panel button.global-btn:hover {
+            background: #218838;
+        }
+
+        #status {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #555;
+            font-weight: bold;
+        }
+        
         .ship-emoji-icon {
             background: none;
             border: none;
             text-align: center;
-            line-height: 30px;
-            filter: drop-shadow(2px 4px 4px rgba(0,0,0,0.4));
+            line-height: 24px;
+            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3));
         }
     </style>
 </head>
 <body>
-    <div id="infoBox">Sisteme bağlanılıyor...</div>
+    <div id="ui-panel">
+        <div>
+            <label><strong>MMSI:</strong></label>
+            <input type="text" id="mmsiInput" value="371305000">
+            <button onclick="trackSpecificShip()">Gemi Ara</button>
+        </div>
+        <button class="global-btn" onclick="trackAllShips()">Sistemi Test Et (Tüm Gemiler)</button>
+        <div id="status">Bağlanmak için işlem seçin...</div>
+    </div>
+    
     <div id="map"></div>
+    
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         let map;
-        let marker;
         let socket;
-
+        let markers = {}; // Artık birden fazla gemiyi tutabiliyoruz
+        let isGlobal = false;
         const API_KEY = "2592f9c9ab177b85ed30b95a5ee3a42309338da5";
-        const TARGET_MMSI = "371305000";
 
-        // Harici bir link yerine yerleşik Gemi Emojisi (🚢) kullanıyoruz. 
-        // Böylece linkin bozulma veya 404 verme ihtimali SIFIRA iniyor.
         const shipIcon = L.divIcon({
-            html: '<div style="font-size: 32px;">🚢</div>',
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
-            popupAnchor: [0, -16],
+            html: '<div style="font-size: 24px;">🚢</div>',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+            popupAnchor: [0, -12],
             className: 'ship-emoji-icon'
         });
-
-        const infoBox = document.getElementById('infoBox');
-
-        function setInfo(msg, isError = false) {
-            infoBox.textContent = msg;
-            infoBox.style.background = isError ? 'rgba(220, 53, 69, 0.9)' : 'rgba(0, 0, 0, 0.7)';
-            infoBox.classList.remove('hidden');
-        }
-
-        function hideInfo() {
-            infoBox.classList.add('hidden');
-        }
 
         function initMap() {
             map = L.map('map').setView([39.0, 35.0], 5);
@@ -97,19 +127,58 @@
             }).addTo(map);
         }
 
-        function connectAISStream() {
+        function setStatus(msg, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = msg;
+            statusDiv.style.color = isError ? 'red' : '#333';
+        }
+
+        function clearMap() {
+            for (let id in markers) {
+                map.removeLayer(markers[id]);
+            }
+            markers = {};
+        }
+
+        function trackSpecificShip() {
+            const mmsi = document.getElementById('mmsiInput').value.trim();
+            if (!mmsi) return;
+            isGlobal = false;
+            clearMap();
+            connectAISStream([mmsi]);
+        }
+
+        function trackAllShips() {
+            isGlobal = true;
+            clearMap();
+            // Dünya genelindeki çok gemili alanlardan birini (Avrupa/Akdeniz) odaklıyoruz
+            map.setView([40.0, 15.0], 4); 
+            connectAISStream([]); // MMSI filtresi boş
+        }
+
+        function connectAISStream(mmsiList) {
             if (socket) socket.close();
 
             socket = new WebSocket("wss://stream.aisstream.io/v0/stream");
 
             socket.onopen = function () {
-                setInfo("Bağlanıldı. Gemiden (MMSI: 371305000) canlı sinyal bekleniyor...");
+                if (isGlobal) {
+                    setStatus("Bağlanıldı. Dünyadaki tüm canlı sinyaller akıyor!");
+                } else {
+                    setStatus(`Bağlanıldı. ${mmsiList[0]} MMSI'den sinyal bekleniyor...`);
+                }
+
                 let subscriptionMessage = {
                     Apikey: API_KEY,
                     BoundingBoxes: [[[-90, -180], [90, 180]]],
-                    FiltersShipMMSI: [TARGET_MMSI],
                     FilterMessageTypes: ["PositionReport"]
+                };
+                
+                // Eğer belirli bir gemi aranıyorsa filtre ekle
+                if (mmsiList.length > 0) {
+                    subscriptionMessage.FiltersShipMMSI = mmsiList;
                 }
+
                 socket.send(JSON.stringify(subscriptionMessage));
             };
 
@@ -128,9 +197,9 @@
                         let lon = positionReport["Longitude"];
                         let speed = positionReport["Sog"];
                         let course = positionReport["Cog"];
+                        let mmsi = aisMessage["MetaData"]["MMSI"];
                         
-                        updateMap(lat, lon, speed, course);
-                        hideInfo();
+                        updateMap(mmsi, lat, lon, speed, course);
                     }
                 } catch (err) {
                     console.error("Veri hatası:", err);
@@ -138,35 +207,41 @@
             };
 
             socket.onerror = function(error) {
-                setInfo("Bağlantı Hatası! Konsola bakın.", true);
+                setStatus("Bağlantı Hatası!", true);
             };
 
             socket.onclose = function(event) {
                 if (event.code === 1008 || event.code === 1011) {
-                    setInfo("Hata: Çok fazla istek atıldı. 1 dk bekleyin.", true);
+                    setStatus("Hata: Çok fazla istek atıldı. Lütfen sekmeyi yenilemeyin.", true);
                 } else {
-                    setInfo("Bağlantı koptu. Yeniden deneniyor...", true);
+                    setStatus("Bağlantı koptu. Yeniden bağlanılıyor...", true);
                 }
-                setTimeout(connectAISStream, 10000);
+                setTimeout(() => connectAISStream(mmsiList), 10000);
             };
         }
 
-        function updateMap(lat, lon, speed, course) {
-            const popupText = `<b>Takip Edilen Gemi</b><br>MMSI: ${TARGET_MMSI}<br>Hız: ${speed ? speed.toFixed(1) : '-'} knot<br>Rota: ${course ? course.toFixed(1) : '-'}°`;
+        function updateMap(mmsi, lat, lon, speed, course) {
+            const popupText = `<b>MMSI: ${mmsi}</b><br>Hız: ${speed ? speed.toFixed(1) : '-'} knot<br>Rota: ${course ? course.toFixed(1) : '-'}°`;
             
-            if (marker) {
-                marker.setLatLng([lat, lon]);
-                marker.getPopup().setContent(popupText);
+            if (markers[mmsi]) {
+                markers[mmsi].setLatLng([lat, lon]);
+                markers[mmsi].getPopup().setContent(popupText);
             } else {
-                marker = L.marker([lat, lon], {icon: shipIcon}).addTo(map);
-                marker.bindPopup(popupText).openPopup();
+                markers[mmsi] = L.marker([lat, lon], {icon: shipIcon}).addTo(map);
+                markers[mmsi].bindPopup(popupText);
+                
+                // Sadece spesifik tek bir gemi aranıyorsa haritayı ona odakla
+                if (!isGlobal) {
+                    map.setView([lat, lon], 12);
+                    markers[mmsi].openPopup();
+                }
             }
-            map.setView([lat, lon], 12);
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             initMap();
-            connectAISStream();
+            // Otomatik olarak istenen gemiyi aramaya başla
+            trackSpecificShip();
         });
     </script>
 </body>

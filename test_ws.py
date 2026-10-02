@@ -8,17 +8,16 @@ async def test_ais():
         async with websockets.connect(uri) as websocket:
             sub = {
                 "Apikey": "2592f9c9ab177b85ed30b95a5ee3a42309338da5",
-                "BoundingBoxes": [[[-90, -180], [90, 180]]],
-                "FiltersShipMMSI": ["371305000"],
-                "FilterMessageTypes": ["PositionReport"]
+                "BoundingBoxes": [[[-90, -180], [90, 180]]]
             }
             await websocket.send(json.dumps(sub))
-            print("Connected and subscribed. Waiting for 10 seconds for any data...")
+            print("Connected. Waiting for global data...")
             try:
-                message = await asyncio.wait_for(websocket.recv(), timeout=10.0)
-                print("Received:", message)
+                for i in range(5):
+                    message = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+                    print(f"Received {i+1}:", message[:200])
             except asyncio.TimeoutError:
-                print("No data received within 10 seconds.")
+                print("No data received.")
     except Exception as e:
         print("Error:", e)
 
