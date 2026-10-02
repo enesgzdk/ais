@@ -3,27 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemi Takip Sistemi (AIS)</title>
+    <title>Gemi Takip Sistemi</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden; /* Kaydırma çubuklarını gizle */
+        }
+        #map {
+            height: 100vh;
+            width: 100vw;
+        }
+        /* Leaflet popup stilini biraz güzelleştirelim */
+        .leaflet-popup-content {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+    </style>
 </head>
 <body>
-    <div id="sidebar">
-        <h2>Gemi Takip Merkezi</h2>
-        <div id="status">Sisteme bağlanılıyor...</div>
-        <div id="shipInfo" class="hidden">
-            <h3>Gemi Bilgileri</h3>
-            <p><strong>MMSI:</strong> <span id="shipMMSI">-</span></p>
-            <p><strong>İsim:</strong> <span id="shipName">Bilinmiyor</span></p>
-            <p><strong>Enlem:</strong> <span id="shipLat">-</span></p>
-            <p><strong>Boylam:</strong> <span id="shipLon">-</span></p>
-            <p><strong>Hız:</strong> <span id="shipSpeed">-</span> knot</p>
-            <p><strong>Rota:</strong> <span id="shipCourse">-</span>°</p>
-            <p><strong>Son Güncelleme:</strong> <span id="lastUpdate">-</span></p>
-        </div>
-    </div>
     <div id="map"></div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="js/app.js"></script>
+    <script>
+        let map;
+        let marker;
+        let socket;
+
+        // API ve Gemi Bilgileri
+        const API_KEY = "2592f9c9ab177b85ed30b95a5ee3a42309338da5";
+        const TARGET_MMSI = "371305000";
+
+        // Özel Gemi İkonu
+        const shipIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/3211/3211116.png',
+            iconSize: [40, 40],
+            iconAnchor: [20, 20],
+            popupAnchor: [0, -20]
+        });
+
+        // Harita Başlatma
+        function initMap() {
+            // Başlangıçta genel bir görünüme sahip olsun
+            map = L.map('map').setView([39.0, 35.0], 5);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        // WebSockets ile AISStream'e Bağlanma
+        function connectAISStream() {
+            if (socket) socket.close();
+
+            socket = new WebSocket("wss://stream.aisstream.io/v0/stream");
+
+            socket.onopen = function () {
+                let subscriptionMessage = {
+                    Apikey: API_KEY,
+                    BoundingBoxes: [[[-90, -180], [90, 180]]],
+                    FiltersShipMMSI: [TARGET_MMSI],
+                    FilterMessageTypes: ["PositionReport"]
+                }
+                socket.send(JSON.stringify(subscriptionMessage));
+            };
+
+            socket.onmessage = async function (event) {
+                try {
+                    let dataText = event.data;
+                    if (event.data instanceof Blob) {
+                        dataText = await event.data.text();
+                    }
+
+                    let aisMessage = JSON.parse(dataText);
+                    
+                    // Konum raporu geldiğinde haritayı güncelle
+                    if (aisMessage["MessageType"] === "PositionReport") {
+                        let positionReport = aisMessage["Message"]["PositionReport"];
+                        let lat = positionReport["Latitude"];
+                        let lon = positionReport["Longitude"];
+                        let speed = positionReport["Sog"];
+                        let course = positionReport["Cog"];
+                        
+                        updateMap(lat, lon, speed, course);
+                    }
+                } catch (err) {
+                    console.error("Veri işlenirken hata:", err);
+                }
+            };
+
+            socket.onclose = function() {
+                // Bağlantı koparsa 5 saniye sonra tekrar dene (Arkaplanda sessizce yapar)
+                setTimeout(connectAISStream, 5000);
+            };
+        }
+
+        // Haritaya Gemiyi Çizme ve Odaklanma
+        function updateMap(lat, lon, speed, course) {
+            const popupText = `<b>Takip Edilen Gemi</b><br>MMSI: ${TARGET_MMSI}<br>Hız: ${speed ? speed.toFixed(1) : '-'} knot<br>Rota: ${course ? course.toFixed(1) : '-'}°`;
+            
+            if (marker) {
+                // Gemi zaten haritadaysa yerini ve bilgilerini güncelle
+                marker.setLatLng([lat, lon]);
+                marker.getPopup().setContent(popupText);
+            } else {
+                // Gemi ilk defa bulunuyorsa haritaya ekle ve popup'ı aç
+                marker = L.marker([lat, lon], {icon: shipIcon}).addTo(map);
+                marker.bindPopup(popupText).openPopup();
+            }
+            // Gemi neredeyse haritayı oraya kaydır
+            map.setView([lat, lon], 12);
+        }
+
+        // Sayfa yüklenir yüklenmez her şeyi otomatik başlat
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            connectAISStream();
+        });
+    </script>
 </body>
 </html>
